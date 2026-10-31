@@ -1,12 +1,36 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="zh-CN">
 <head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Document</title>
-	<link rel="stylesheet" type="text/css" href="index.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0b1012" />
+  <title>异闻地图 | 探索世界的另一面</title>
+  <link rel="stylesheet" href="vendor/leaflet.css" />
+  <link rel="stylesheet" href="index.css?v=2" />
 </head>
 <body>
-	<h1>fihsdiid</h1>
+  <div class="app">
+    <aside class="sidebar">
+      <a class="brand" href="#" aria-label="异闻地图首页"><span class="brand-mark">✳</span><span><b>异闻地图</b><small>THE UNKNOWN ATLAS</small></span></a>
+      <div class="side-intro"><span class="eyebrow">EXPLORE THE UNKNOWN</span><h1>世界很大，<br>未知更多<span>。</span></h1><p>在地图上探索那些<br>至今仍无法解释的故事。</p></div>
+      <div class="side-section"><div class="section-heading"><span>探索图层</span><span class="mono">LAYERS</span></div><button class="layer active" data-filter="all"><span class="layer-icon">◎</span><span>全部事件<small>查看所有未知记录</small></span><span class="layer-count" id="all-count">06</span></button><button class="layer" data-filter="灵异传说"><span class="layer-icon purple">✧</span><span>灵异传说<small>流传于当地的神秘故事</small></span><span class="layer-count">02</span></button><button class="layer" data-filter="不明现象"><span class="layer-icon blue">◈</span><span>不明现象<small>难以解释的目击与事件</small></span><span class="layer-count">02</span></button><button class="layer" data-filter="神秘地点"><span class="layer-icon gold">⌁</span><span>神秘地点<small>笼罩在谜团中的地方</small></span><span class="layer-count">02</span></button></div>
+      <div class="sidebar-bottom"><span class="status-dot"></span> 地图正在探索中 <span class="mono">EST. 2024</span></div>
+    </aside>
+    <main class="workspace">
+      <header class="topbar"><div class="breadcrumb">探索 <span>/</span> <strong>全球异闻</strong></div><div class="top-right"><span class="live-dot"></span> THE WORLD IS FULL OF MYSTERIES <span class="top-divider"></span><span>✳ &nbsp; 保持好奇</span></div></header>
+      <div class="content">
+        <div class="page-heading"><div><div class="eyebrow"><span class="tiny-cross">✳</span> AN ATLAS OF THE UNEXPLAINED</div><h2>全球异闻 <span>地图</span></h2><p>每一个坐标背后，都藏着一个等待被发现的故事。</p></div><div class="heading-index"><span>EXPLORATION NO.</span><strong>001 — 006</strong></div></div>
+        <div class="map-card"><div class="map-top"><div><span class="live-dot"></span> <b>地球探索</b><span class="map-sub">INTERACTIVE GLOBE</span></div><div class="view-switch"><button id="view-globe" class="active" type="button">地球</button><button id="view-map" type="button">地名地图</button><span class="map-coords mono">35° 41′ N &nbsp; / &nbsp; 139° 41′ E</span></div></div>
+          <div class="globe-area"><div class="ambient"></div><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><canvas id="globe" aria-label="可交互地球，拖动旋转，滚轮缩放"></canvas><div id="local-map" aria-label="本地地名地图"></div><canvas id="place-labels" aria-hidden="true"></canvas><div id="map-zoom" class="map-zoom">缩放 2 / 10</div><div class="globe-label label-left"><span>01 / WORLD VIEW</span><b>地球上的<br>未解之谜</b><i></i></div><div class="globe-label label-right"><span>UNKNOWN<br>COORDINATES</span><i></i></div><div class="map-hint"><span>✥</span> <span id="hint-text">拖动地球旋转</span> <em></em> 滚轮缩放</div><div class="map-controls"><button id="zoom-in" aria-label="放大">+</button><button id="zoom-out" aria-label="缩小">−</button><button id="reset" aria-label="重置视角">⌾</button></div></div>
+          <div class="map-footer"><div><span class="legend-dot purple-bg"></span> 灵异传说 <span class="legend-dot blue-bg"></span> 不明现象 <span class="legend-dot gold-bg"></span> 神秘地点</div><span class="mono">SCROLL TO EXPLORE &nbsp; ↓</span></div>
+        </div>
+        <section class="events"><div class="events-title"><div><span class="eyebrow">THE STORIES BEHIND THE STARS</span><h3>探索未知 <span>／</span> <small id="event-total">06 个故事</small></h3></div><span class="events-note">选择一个故事，开启探索 <span>↗</span></span></div><div class="event-list" id="event-list"></div></section>
+      </div>
+      <footer><span>✳ &nbsp; THE UNKNOWN ATLAS</span><span>献给所有对未知保持好奇的人。</span><span>EXPLORE BEYOND THE KNOWN &nbsp; ↗</span></footer>
+    </main>
+    <aside class="details"><div class="detail-top"><span>地点档案</span><span class="mono">LOCATION FILE &nbsp; ↗</span></div><div id="detail-content"></div><div class="detail-bottom"><span>✳</span><p>世界的另一面，<br>正等待你的发现。</p><small>KEEP EXPLORING THE UNKNOWN</small></div></aside>
+  </div>
+  <script src="vendor/leaflet.js"></script>
+  <script src="index.js?v=3"></script>
 </body>
 </html>
