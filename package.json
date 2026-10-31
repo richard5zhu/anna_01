@@ -1,0 +1,26 @@
+{
+  "name": "unknown-atlas",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test tests/*.test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/richard5zhu/anna_01.git"
+  },
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/richard5zhu/anna_01/issues"
+  },
+  "homepage": "https://github.com/richard5zhu/anna_01#readme",
+  "dependencies": {
+    "d3-geo": "^3.1.1"
+  },
+  "devDependencies": {
+    "vite": "^8.3.5"
+  },
+  "private": true
+}
