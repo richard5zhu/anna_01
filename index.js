@@ -36,7 +36,7 @@ function draw() {
   layerRenderer.draw(ctx,projection,rect,[lon,lat],zoom);
   ctx.beginPath();path({type:'Sphere'});ctx.strokeStyle='rgba(193,218,190,.45)';ctx.lineWidth=1;ctx.stroke();
   const occupied=[];ctx.font='11px sans-serif';ctx.textBaseline='middle';
-  for(const place of places){
+  for(const place of document.querySelector('#place-toggle').checked ? places : []){
     if(place.minZoom>zoom+1 || geoDistance([lon,lat],place.coordinates)>Math.PI/2)continue;
     const p=projection(place.coordinates); if(!p || p[0]<0 || p[1]<0 || p[0]>rect.width || p[1]>rect.height)continue;
     const width=ctx.measureText(place.name).width, box=[p[0]-4,p[1]-9,p[0]+width+12,p[1]+9];
@@ -73,6 +73,7 @@ canvas.addEventListener('pointercancel',()=>{dragging=false});
 function setZoom(n){zoom=Math.max(1,Math.min(10,n));draw()}
 canvas.addEventListener('wheel',e=>{e.preventDefault();setZoom(zoom+(e.deltaY<0?1:-1))},{passive:false});
 document.querySelector('#zoom-in').onclick=()=>setZoom(zoom+1);document.querySelector('#zoom-out').onclick=()=>setZoom(zoom-1);document.querySelector('#reset').onclick=()=>{zoom=1;flyTo(selected)};
+document.querySelector('#place-toggle').addEventListener('change',draw);
 window.addEventListener('resize',draw);render();draw();
 
 const layerDialog = document.querySelector('#layer-dialog');

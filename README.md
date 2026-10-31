@@ -23,7 +23,17 @@ npm run dev
 
 <!-- coderabbit-ai-generated-section:v1:1d13b07a24ea6bd83744bd0614d55511a9729dad32ee0ebcf92d23820cf3dec8 -->
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:d428d7ae24177df6f6f6d337c18263d043c4b8c79f809855bf1ad4deea691e4e -->
+
+## 本地 WMS 服务
+
+可独立启动本仓库提供的 WMS 地图服务。安装、启动及连接方法见 [WMS 服务说明](wms-server/README.md)。
+
 ## 自定义图层
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 点击页面右上角「图层管理」，填写名称、类型与地址后添加。XYZ 地址需要包含 `{z}`、`{x}`、`{y}`，例如 `https://example.com/tiles/{z}/{x}/{y}.png`。WMS 填写服务地址及图层名称，支持 1.1.1 和 1.3.0，使用 PNG 和 EPSG:3857。服务地址可保留额外查询参数。填写署名后会在地图上显示。
 
