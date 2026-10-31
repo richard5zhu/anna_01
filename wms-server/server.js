@@ -2,7 +2,7 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { createCanvas, GlobalFonts } from '@napi-rs/canvas';
-import { geoMercator, geoPath } from 'd3-geo';
+import { geoMercator, geoPath, geoTransform } from 'd3-geo';
 
 const EXTENT = 20037508.342789244;
 const RADIUS = 6378137;
@@ -13,6 +13,21 @@ for (const feature of land.features) {
   const polygons = feature.geometry.type === 'Polygon' ? [feature.geometry.coordinates] : feature.geometry.coordinates;
   for (const polygon of polygons) for (const ring of polygon) ring.reverse();
 }
+const smallIslands = JSON.parse(await readFile(new URL('./data/east-asian-islands.geojson', import.meta.url), 'utf8'));
+const islandLabels = JSON.parse(await readFile(new URL('./data/island-labels.json', import.meta.url), 'utf8'));
+const borders = JSON.parse(await readFile(new URL('./data/borders.geojson', import.meta.url), 'utf8'));
+const provinces = JSON.parse(await readFile(new URL('./data/provinces.geojson', import.meta.url), 'utf8'));
+
+// Index line extents once so a tile renders only geographically relevant boundaries.
+function indexLines(data) {
+  return data.features.filter(feature => feature.geometry && ['LineString','MultiLineString'].includes(feature.geometry.type)).map(feature => {
+    let west=180,south=90,east=-180,north=-90;
+    const lines=feature.geometry.type==='LineString' ? [feature.geometry.coordinates] : feature.geometry.coordinates;
+    for(const line of lines) for(const [lon,lat] of line){west=Math.min(west,lon);east=Math.max(east,lon);south=Math.min(south,lat);north=Math.max(north,lat)}
+    return {feature,west,east,south,north};
+  });
+}
+const borderIndex = indexLines(borders), provinceIndex = indexLines(provinces);
 const placeFont = ['Noto Sans CJK SC', 'Noto Sans CJK JP', 'Microsoft YaHei', 'PingFang SC', 'WenQuanYi Zen Hei', 'SimHei'].find(name => GlobalFonts.has(name)) || 'sans-serif';
 const places = JSON.parse(await readFile(new URL('../public/data/places.json', import.meta.url), 'utf8'));
 const escapeXml = value => String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&apos;');
@@ -28,23 +43,40 @@ function capabilities(version, endpoint) {
 function exception(message, code='InvalidParameterValue') {
   return `<?xml version="1.0" encoding="UTF-8"?><ServiceExceptionReport version="1.1.1"><ServiceException code="${escapeXml(code)}">${escapeXml(message)}</ServiceException></ServiceExceptionReport>`;
 }
-function renderMap(bbox, width, height) {
+function renderMap(bbox, width, height, transparent) {
   const [minX,minY,maxX,maxY] = bbox;
   const canvas=createCanvas(width,height), ctx=canvas.getContext('2d');
-  ctx.fillStyle='#24423b';ctx.fillRect(0,0,width,height);
+  if (!transparent) { ctx.fillStyle='#d7edf7';ctx.fillRect(0,0,width,height); }
   const xScale=width/(maxX-minX), yScale=height/(maxY-minY);
   const projection=geoMercator().scale(RADIUS).translate([0,0]);
   ctx.save();ctx.setTransform(xScale,0,0,yScale,-minX*xScale,maxY*yScale);
-  ctx.beginPath();geoPath(projection,ctx)(land);ctx.fillStyle='#9aab8b';ctx.fill();ctx.restore();
-  const zoom=Math.max(0,Math.log2(2*EXTENT/(maxX-minX))); const occupied=[];
-  ctx.font=`12px "${placeFont}"`;ctx.textBaseline='middle';
-  for(const place of places){
+  ctx.beginPath();const landPath=geoPath(projection,ctx);landPath(land);landPath(smallIslands);ctx.fillStyle='#ffffff';ctx.fill();ctx.restore();
+
+  const zoom=Math.max(0,Math.log2((2*EXTENT/(maxX-minX))*(width/256)));
+  const west=minX/RADIUS*180/Math.PI,east=maxX/RADIUS*180/Math.PI;
+  const mercatorLat=y=>Math.atan(Math.sinh(y/RADIUS))*180/Math.PI;
+  const south=mercatorLat(minY),north=mercatorLat(maxY);
+  const visible=index=>index.filter(item=>item.east>=west && item.west<=east && item.north>=south && item.south<=north).map(item=>item.feature);
+  const screenTransform=geoTransform({point(x,y){this.stream.point((x-minX)*xScale,(maxY+y)*yScale)}});
+  const screenProjection={stream:output=>projection.stream(screenTransform.stream(output))};
+  const path=geoPath(screenProjection,ctx);
+  const drawLines=(features,color,lineWidth,dash=[])=>{if(!features.length)return;ctx.beginPath();path({type:'FeatureCollection',features});ctx.lineWidth=lineWidth;ctx.strokeStyle=color;ctx.setLineDash(dash);ctx.stroke();ctx.setLineDash([])};
+  if(zoom>=2)drawLines(visible(provinceIndex),'#a8bac4',0.75);
+  const countryLines=visible(borderIndex);
+  drawLines(countryLines.filter(f=>!f.properties.disputed),'#617e8e',1.2);
+  drawLines(countryLines.filter(f=>f.properties.disputed),'#617e8e',1.2,[4,3]);
+
+  const occupied=[];ctx.font=`12px "${placeFont}"`;ctx.textBaseline='middle';
+  const labels=[...islandLabels.map(place=>({...place,isIsland:true})),...places];
+  for(const place of labels){
     if(place.minZoom>zoom+1)continue;
     const [mx,my]=projection(place.coordinates);const x=(mx-minX)*xScale,y=(maxY+my)*yScale;
-    if(x<4||y<8||x>width-4||y>height-8)continue;
+    if(x < -160 || y < -16 || x > width+16 || y > height+16)continue;
     const labelWidth=ctx.measureText(place.name).width, box=[x-3,y-9,x+labelWidth+8,y+9];
     if(occupied.some(b=>box[0]<b[2]&&box[2]>b[0]&&box[1]<b[3]&&box[3]>b[1]))continue;
-    occupied.push(box);ctx.fillStyle='#eef1e2';ctx.beginPath();ctx.arc(x,y,2,0,2*Math.PI);ctx.fill();ctx.lineWidth=3;ctx.strokeStyle='#354b3f';ctx.strokeText(place.name,x+5,y);ctx.fillStyle='#edf1e2';ctx.fillText(place.name,x+5,y);
+    occupied.push(box);ctx.fillStyle='#31546a';
+    if(!place.isIsland){ctx.beginPath();ctx.arc(x,y,2,0,2*Math.PI);ctx.fill()}
+    ctx.lineWidth=3;ctx.strokeStyle='#ffffff';ctx.strokeText(place.name,x+5,y);ctx.fillStyle='#31546a';ctx.fillText(place.name,x+5,y);
     if(occupied.length>=150)break;
   }
   return canvas.toBuffer('image/png');
@@ -73,7 +105,7 @@ export function createWmsServer() {
     const width=Number(params.WIDTH),height=Number(params.HEIGHT),bboxParts=(params.BBOX||'').split(','),bbox=bboxParts.map(Number);
     if(!Number.isInteger(width)||!Number.isInteger(height)||width<1||height<1||width>2048||height>2048)return fail('WIDTH and HEIGHT must be integers between 1 and 2048');
     if(bbox.length!==4||bboxParts.some(s=>!s.trim())||bbox.some(n=>!Number.isFinite(n))||bbox[0]>=bbox[2]||bbox[1]>=bbox[3])return fail('BBOX must contain four ordered finite coordinates');
-    try {const png=renderMap(bbox,width,height);res.writeHead(200,{'Content-Type':'image/png','Cache-Control':'public, max-age=3600'});res.end(png)} catch {fail('Could not render map','NoApplicableCode')}
+    try {const png=renderMap(bbox,width,height,(params.TRANSPARENT||'false').toLowerCase()==='true');res.writeHead(200,{'Content-Type':'image/png','Cache-Control':'public, max-age=3600'});res.end(png)} catch {fail('Could not render map','NoApplicableCode')}
   });
 }
 if(process.argv[1] && import.meta.url===pathToFileURL(process.argv[1]).href){

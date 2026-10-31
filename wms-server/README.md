@@ -28,7 +28,23 @@ npm start --prefix wms-server
 
 ## 接口与范围
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:09de08a7bf9890ab1f1a6b2f561ca94c1d09a8e59cbbada340d6c18583a316e1 -->
+
 - `GET /wms?SERVICE=WMS&REQUEST=GetCapabilities` 返回服务说明。
+- `GetMap` 请求使用 `TRANSPARENT=true` 时海洋为透明背景，陆地、边界和地名仍会绘制；省略该参数或使用 `false` 时，海洋为淡蓝色。前端默认请求透明背景，并由地球底色显示淡蓝色海洋。
+
+<!-- /coderabbit-ai-generated:v1 -->
 - 支持 WMS 1.1.1 和 1.3.0 的 `GetMap`，图层 `atlas:world`，投影 `EPSG:3857`，格式 `image/png`，最大图片尺寸为 2048 × 2048。
-- 数据为简化的全球海陆轮廓及约 7,300 个地名，适合概览；不包含街道或建筑。文字使用系统可用的中文字体，若中文显示为方框，请安装中文字体（如 Noto Sans CJK）。
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:e84bbc899dcd729c30bdd3fbec4a026508e30729d925bd15fa22715f51508332 -->
+
+- 地图使用白色陆地、淡蓝色海洋，显示国家和省级边界；部分争议或未确定的边界以虚线表示。省界从约第 2 级开始显示。
+- 标注包括海南岛、台湾岛、西沙群岛和南沙群岛；放大地图可看到更多地名和简化的东亚沿海岛屿。岛屿和边界数据适合概览，不包含街道或建筑。
+- 边界、岛屿和地名来自 [Natural Earth 10m 数据](https://github.com/nvkelso/natural-earth-vector/tree/ca96624a56bd078437bca8184e78163e5039ad19/geojson)，经筛选与简化；中国相关的边界线参照数据中的 `FCLASS_CN` 分类。该数据不是中国官方审图数据，边界、海岸和岛屿可能有简化、缺漏或不同观点，不应用于测绘或正式出版。
+- 文字使用系统可用的中文字体，若中文显示为方框，请安装中文字体（如 Noto Sans CJK）。
+
+<!-- /coderabbit-ai-generated:v1 -->
 - 测试：`npm test --prefix wms-server`。

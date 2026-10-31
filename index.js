@@ -29,7 +29,7 @@ function draw() {
   canvas.width = Math.round(rect.width*dpr); canvas.height = Math.round(rect.height*dpr);
   ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,rect.width,rect.height);
   const ocean=ctx.createRadialGradient(cx-radius*.35,cy-radius*.35,0,cx,cy,radius*1.2);
-  ocean.addColorStop(0,'#587668');ocean.addColorStop(.55,'#304f43');ocean.addColorStop(1,'#102621');
+  ocean.addColorStop(0,'#e8f6fc');ocean.addColorStop(.55,'#cce8f5');ocean.addColorStop(1,'#9ccddd');
   ctx.beginPath(); path({type:'Sphere'});ctx.fillStyle=ocean;ctx.fill();
   ctx.beginPath(); path(graticule);ctx.strokeStyle='rgba(197,221,193,.12)';ctx.lineWidth=.6;ctx.stroke();
   if(land){ctx.beginPath();path(zoom >= 4 && detailedLand ? detailedLand : land);ctx.fillStyle='#9aab8b';ctx.fill();ctx.strokeStyle='rgba(209,224,194,.25)';ctx.lineWidth=.5;ctx.stroke();}
