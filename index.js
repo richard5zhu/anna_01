@@ -1,3 +1,5 @@
+import { createLayerRenderer } from './layers.js';
+import { geoOrthographic, geoPath, geoGraticule10, geoDistance } from 'd3-geo';
 const stories = [
   { id:'aokigahara', title:'青木原树海', location:'日本 · 山梨县', lat:35.47, lon:138.61, type:'灵异传说', color:'#bda6ce', date:'传说流传至今', coordinates:'35.47° N, 138.61° E', description:'位于富士山脚下的茂密森林，因寂静的环境和流传已久的民间故事而蒙上一层神秘色彩。关于树海的传说，也成为日本怪谈文化的一部分。', en:'AOKIGAHARA, JAPAN' },
   { id:'bermuda', title:'百慕大三角', location:'北大西洋 · 百慕大海域', lat:26, lon:-71, type:'不明现象', color:'#8ebbbd', date:'20 世纪至今', coordinates:'26.00° N, 71.00° W', description:'这片北大西洋海域因船只和飞机失踪的故事闻名。许多事件已有自然原因的解释，但关于这片海域的神秘叙述仍在流传。', en:'BERMUDA TRIANGLE' },
@@ -8,98 +10,112 @@ const stories = [
 ];
 const canvas = document.querySelector('#globe');
 const ctx = canvas.getContext('2d');
-let land = null, filter = 'all', selected = stories[0], longitude = 115, latitude = 20, scale = 1, dragging = false, lastX = 0, lastY = 0, moved = false, target = null;
-const rad = Math.PI / 180;
-fetch('world.geojson').then(r => r.json()).then(data => { land = data; }).catch(() => {});
-function project(lon, lat, radius, cx, cy) {
-  const l = (lon - longitude) * rad, p = lat * rad, p0 = latitude * rad;
-  const visibility = Math.sin(p0)*Math.sin(p)+Math.cos(p0)*Math.cos(p)*Math.cos(l);
-  return {x:cx+radius*Math.cos(p)*Math.sin(l), y:cy-radius*(Math.cos(p0)*Math.sin(p)-Math.sin(p0)*Math.cos(p)*Math.cos(l)), visible:visibility>0};
-}
-function line(points, radius, cx, cy) {
-  ctx.beginPath(); let drawing=false;
-  for (const [lon,lat] of points) { const p=project(lon,lat,radius,cx,cy); if(p.visible){if(!drawing) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); drawing=true;} else drawing=false; }
-  ctx.stroke();
+const status = document.querySelector('#load-status');
+let land, detailedLand, places = [], selected = stories[0], filter = 'all';
+let lon = 115, lat = 20, zoom = 1, dragging = false, moved = false, lastX = 0, lastY = 0, animation = 0;
+const graticule = geoGraticule10();
+const layerRenderer = createLayerRenderer(() => draw(), message => { document.querySelector('#layer-message').textContent = message; document.querySelector('#layer-live').textContent = message.includes('失败') ? message : ''; });
+const base = import.meta.env.BASE_URL;
+Promise.all(['world.geojson','data/land.geojson','data/places.json'].map(path => fetch(base + path).then(r => {if(!r.ok) throw Error(path);return r.json()}))).then(data => { [land,detailedLand,places] = data; status.textContent = ''; draw(); }).catch(() => { status.textContent = '本地地图数据加载失败，请检查项目文件。'; });
+function geometry() {
+  const rect = canvas.getBoundingClientRect();
+  const cx = rect.width * (rect.width <= 700 ? .5 : .56), cy = rect.height * .52;
+  const radius = Math.min(rect.width * (rect.width <= 700 ? .43 : .30), rect.height * .40) * 2 ** (zoom - 1);
+  const projection = geoOrthographic().translate([cx,cy]).scale(radius).rotate([-lon,-lat]).clipAngle(90);
+  return {rect,cx,cy,radius,projection,path:geoPath(projection,ctx)};
 }
 function draw() {
-  const rect=canvas.getBoundingClientRect(), dpr=window.devicePixelRatio||1;
-  if(canvas.width!==Math.round(rect.width*dpr)||canvas.height!==Math.round(rect.height*dpr)){canvas.width=Math.round(rect.width*dpr);canvas.height=Math.round(rect.height*dpr);}
+  const {rect,cx,cy,radius,projection,path} = geometry(), dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(rect.width*dpr); canvas.height = Math.round(rect.height*dpr);
   ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,rect.width,rect.height);
-  if(target && !dragging){let diff=((target.lon-longitude+540)%360)-180; longitude+=diff*.07; latitude+=(target.lat-latitude)*.07; if(Math.abs(diff)<.05&&Math.abs(target.lat-latitude)<.05) target=null;}
-  else if(!dragging && !target) longitude+=.025;
-  const cx=rect.width/2, cy=rect.height/2, radius=Math.min(rect.width*.36,rect.height*.405)*scale;
-  const glow=ctx.createRadialGradient(cx,cy,radius*.7,cx,cy,radius*1.15);glow.addColorStop(0,'rgba(160,185,143,.12)');glow.addColorStop(1,'rgba(160,185,143,0)');ctx.fillStyle=glow;ctx.beginPath();ctx.arc(cx,cy,radius*1.15,0,Math.PI*2);ctx.fill();
-  const ocean=ctx.createRadialGradient(cx-radius*.32,cy-radius*.4,0,cx,cy,radius*1.2); ocean.addColorStop(0,'#547365');ocean.addColorStop(.55,'#304f43');ocean.addColorStop(1,'#122922');ctx.beginPath();ctx.arc(cx,cy,radius,0,Math.PI*2);ctx.fillStyle=ocean;ctx.fill();ctx.save();ctx.clip();
-  ctx.strokeStyle='rgba(185,207,177,.12)';ctx.lineWidth=.6;
-  for(let lat=-60;lat<=60;lat+=30){const pts=[];for(let lon=-180;lon<=180;lon+=3)pts.push([lon,lat]);line(pts,radius,cx,cy)}
-  for(let lon=-180;lon<180;lon+=30){const pts=[];for(let lat=-90;lat<=90;lat+=3)pts.push([lon,lat]);line(pts,radius,cx,cy)}
-  if(land){ctx.fillStyle='#9caa8a';ctx.strokeStyle='rgba(205,217,184,.25)';ctx.lineWidth=.45; for(const feature of land.features){const polygons=feature.geometry.type==='Polygon'?[feature.geometry.coordinates]:feature.geometry.coordinates;for(const polygon of polygons){for(const ring of polygon){ctx.beginPath();let started=false;for(const point of ring){const p=project(point[0],point[1],radius,cx,cy);if(p.visible){if(!started){ctx.moveTo(p.x,p.y);started=true}else ctx.lineTo(p.x,p.y)}}if(started){ctx.closePath();ctx.fill();ctx.stroke()}}}}}
-  const shade=ctx.createRadialGradient(cx-radius*.35,cy-radius*.4,radius*.1,cx+radius*.15,cy+radius*.1,radius*1.15);shade.addColorStop(0,'rgba(255,255,225,.08)');shade.addColorStop(.7,'rgba(0,0,0,0)');shade.addColorStop(1,'rgba(2,12,10,.55)');ctx.fillStyle=shade;ctx.fillRect(cx-radius,cy-radius,radius*2,radius*2);ctx.restore();
-  ctx.strokeStyle='rgba(194,213,174,.35)';ctx.lineWidth=1;ctx.beginPath();ctx.arc(cx,cy,radius,0,Math.PI*2);ctx.stroke();
-  for(const story of stories.filter(s=>filter==='all'||s.type===filter)){const p=project(story.lon,story.lat,radius,cx,cy);if(!p.visible)continue;ctx.beginPath();ctx.arc(p.x,p.y,story===selected?10:7,0,Math.PI*2);ctx.fillStyle=story.color+'33';ctx.fill();ctx.beginPath();ctx.arc(p.x,p.y,story===selected?4:3,0,Math.PI*2);ctx.fillStyle=story.color;ctx.fill();ctx.strokeStyle='#ecf0d8';ctx.lineWidth=1;ctx.stroke();if(story===selected){ctx.font='10px Noto Sans SC';ctx.fillStyle='#e8eddf';ctx.fillText(story.title,p.x+13,p.y-8)}}
-  requestAnimationFrame(draw);
+  const ocean=ctx.createRadialGradient(cx-radius*.35,cy-radius*.35,0,cx,cy,radius*1.2);
+  ocean.addColorStop(0,'#587668');ocean.addColorStop(.55,'#304f43');ocean.addColorStop(1,'#102621');
+  ctx.beginPath(); path({type:'Sphere'});ctx.fillStyle=ocean;ctx.fill();
+  ctx.beginPath(); path(graticule);ctx.strokeStyle='rgba(197,221,193,.12)';ctx.lineWidth=.6;ctx.stroke();
+  if(land){ctx.beginPath();path(zoom >= 4 && detailedLand ? detailedLand : land);ctx.fillStyle='#9aab8b';ctx.fill();ctx.strokeStyle='rgba(209,224,194,.25)';ctx.lineWidth=.5;ctx.stroke();}
+  layerRenderer.draw(ctx,projection,rect,[lon,lat],zoom);
+  ctx.beginPath();path({type:'Sphere'});ctx.strokeStyle='rgba(193,218,190,.45)';ctx.lineWidth=1;ctx.stroke();
+  const occupied=[];ctx.font='11px sans-serif';ctx.textBaseline='middle';
+  for(const place of places){
+    if(place.minZoom>zoom+1 || geoDistance([lon,lat],place.coordinates)>Math.PI/2)continue;
+    const p=projection(place.coordinates); if(!p || p[0]<0 || p[1]<0 || p[0]>rect.width || p[1]>rect.height)continue;
+    const width=ctx.measureText(place.name).width, box=[p[0]-4,p[1]-9,p[0]+width+12,p[1]+9];
+    if(occupied.some(b=>box[0]<b[2]&&box[2]>b[0]&&box[1]<b[3]&&box[3]>b[1]))continue;
+    occupied.push(box);ctx.beginPath();ctx.arc(p[0],p[1],1.8,0,Math.PI*2);ctx.fillStyle='#e2e7d5';ctx.fill();ctx.lineWidth=3;ctx.strokeStyle='#334b3d';ctx.strokeText(place.name,p[0]+5,p[1]);ctx.fillStyle='#edf1e2';ctx.fillText(place.name,p[0]+5,p[1]);if(occupied.length>=120)break;
+  }
+  for(const story of stories.filter(s=>filter==='all'||s.type===filter)){
+    if(geoDistance([lon,lat],[story.lon,story.lat])>=Math.PI/2)continue;
+    const p=projection([story.lon,story.lat]);if(!p)continue;
+    ctx.beginPath();ctx.arc(p[0],p[1],story===selected?12:8,0,Math.PI*2);ctx.fillStyle=story.color+'44';ctx.fill();ctx.beginPath();ctx.arc(p[0],p[1],story===selected?5:4,0,Math.PI*2);ctx.fillStyle=story.color;ctx.fill();ctx.strokeStyle='#f2f2df';ctx.lineWidth=1;ctx.stroke();
+    if(story===selected){ctx.font='12px sans-serif';ctx.lineWidth=3;ctx.strokeStyle='#263c32';ctx.strokeText(story.title,p[0]+15,p[1]-10);ctx.fillStyle='#f1f3e8';ctx.fillText(story.title,p[0]+15,p[1]-10)}
+  }
+  document.querySelector('#zoom-label').textContent=String(zoom).padStart(2,'0')+' / 10';
 }
 function render(){
- const visible=stories.filter(s=>filter==='all'||s.type===filter);
- document.querySelector('.map-coords').textContent=selected.coordinates;
- document.querySelector('#event-total').textContent=String(visible.length).padStart(2,'0')+' 个故事';
- document.querySelector('#event-list').innerHTML=visible.map((s,i)=>`<button class="event-card ${s===selected?'selected':''}" data-id="${s.id}"><div class="card-top"><span style="color:${s.color}">● &nbsp; ${s.type}</span><span class="mono">0${stories.indexOf(s)+1} / 06</span></div><h4>${s.title}</h4><div class="card-top"><p>${s.location}</p><span class="arrow">↗</span></div></button>`).join('');
- document.querySelector('#detail-content').innerHTML=`<div class="detail-image"><span class="image-caption">✳ &nbsp; ${selected.en}</span></div><span class="detail-tag">✳ &nbsp; ${selected.type}</span><h2 class="detail-title">${selected.title}</h2><div class="detail-location"><span>⌖</span>${selected.location}</div><p class="detail-desc">${selected.description}</p><div class="detail-meta"><div class="meta-row"><span>坐标</span><b class="mono">${selected.coordinates}</b></div><div class="meta-row"><span>时间</span><b>${selected.date}</b></div><div class="meta-row"><span>档案类型</span><b>${selected.type}</b></div></div><p class="detail-disclaimer">✳ &nbsp; 本地图收录传说与公开故事，内容仅供探索参考。</p>`;
+  const visible=stories.filter(s=>filter==='all'||s.type===filter);
+  document.querySelector('#event-total').textContent=String(visible.length).padStart(2,'0');
+  document.querySelector('#coordinates').textContent=selected.coordinates;
+  document.querySelector('#event-list').innerHTML=visible.map(s=>`<button class="event-card ${s===selected?'selected':''}" data-id="${s.id}"><div class="line"><span class="category" style="color:${s.color}">● &nbsp; ${s.type}</span><span class="index">0${stories.indexOf(s)+1} / 06</span></div><h3>${s.title}</h3><div class="line"><p>${s.location}</p><span class="arrow">↗</span></div></button>`).join('');
+  document.querySelector('#detail-content').innerHTML=`<span class="detail-tag">✳ &nbsp; ${selected.type}</span><h3 class="detail-title">${selected.title}</h3><div class="detail-location">⌖ &nbsp; ${selected.location}</div><p class="detail-desc">${selected.description}</p><div class="detail-meta"><div class="meta-row"><span>坐标</span><b>${selected.coordinates}</b></div><div class="meta-row"><span>时间</span><b>${selected.date}</b></div></div><p class="detail-note">本地图收录传说与公开故事，仅供探索参考。</p>`;
 }
-function choose(story){selected=story;target={lon:story.lon,lat:Math.max(-50,Math.min(50,story.lat))};render();if(mapMode && localMap){localMap.flyTo([story.lat,story.lon]);refreshMapMarkers();}}
-document.querySelectorAll('.layer').forEach(button=>button.addEventListener('click',()=>{filter=button.dataset.filter;document.querySelectorAll('.layer').forEach(b=>b.classList.toggle('active',b===button));const visible=stories.filter(s=>filter==='all'||s.type===filter);if(!visible.includes(selected))choose(visible[0]);else render();if(mapMode)refreshMapMarkers();}));
-document.querySelector('#event-list').addEventListener('click',e=>{const card=e.target.closest('[data-id]');if(card)choose(stories.find(s=>s.id===card.dataset.id));});
-canvas.addEventListener('pointerdown',e=>{dragging=true;moved=false;lastX=e.clientX;lastY=e.clientY;target=null;canvas.setPointerCapture(e.pointerId)});
-canvas.addEventListener('pointermove',e=>{if(!dragging)return;const dx=e.clientX-lastX,dy=e.clientY-lastY;if(Math.abs(dx)+Math.abs(dy)>1)moved=true;longitude-=dx*.35;latitude=Math.max(-85,Math.min(85,latitude+dy*.35));lastX=e.clientX;lastY=e.clientY});
-canvas.addEventListener('pointerup',e=>{dragging=false;if(moved)return;const rect=canvas.getBoundingClientRect(),radius=Math.min(rect.width*.36,rect.height*.405)*scale;const candidates=stories.filter(s=>filter==='all'||s.type===filter).map(s=>({s,p:project(s.lon,s.lat,radius,rect.width/2,rect.height/2)})).filter(x=>x.p.visible).sort((a,b)=>Math.hypot(a.p.x-(e.clientX-rect.left),a.p.y-(e.clientY-rect.top))-Math.hypot(b.p.x-(e.clientX-rect.left),b.p.y-(e.clientY-rect.top)));if(candidates.length&&Math.hypot(candidates[0].p.x-(e.clientX-rect.left),candidates[0].p.y-(e.clientY-rect.top))<15)choose(candidates[0].s)});
+function flyTo(story){
+  selected=story;render();cancelAnimationFrame(animation);
+  const startLon=lon,startLat=lat,diff=((story.lon-lon+540)%360)-180,start=performance.now();
+  function step(now){const t=Math.min((now-start)/700,1), ease=1-(1-t)**3;lon=startLon+diff*ease;lat=startLat+(story.lat-startLat)*ease;draw();if(t<1)animation=requestAnimationFrame(step)}
+  animation=requestAnimationFrame(step);
+}
+document.querySelector('#event-list').addEventListener('click',e=>{const card=e.target.closest('[data-id]');if(card)flyTo(stories.find(s=>s.id===card.dataset.id))});
+document.querySelectorAll('.filter').forEach(button=>button.addEventListener('click',()=>{filter=button.dataset.filter;document.querySelectorAll('.filter').forEach(b=>b.classList.toggle('active',b===button));const visible=stories.filter(s=>filter==='all'||s.type===filter);if(!visible.includes(selected))flyTo(visible[0]);else{render();draw()}}));
+canvas.addEventListener('pointerdown',e=>{dragging=true;moved=false;lastX=e.clientX;lastY=e.clientY;cancelAnimationFrame(animation);canvas.setPointerCapture(e.pointerId)});
+canvas.addEventListener('pointermove',e=>{if(!dragging)return;const dx=e.clientX-lastX,dy=e.clientY-lastY;if(Math.abs(dx)+Math.abs(dy)>1)moved=true;const radius=geometry().radius;lon-=dx*180/(Math.PI*radius*Math.max(.2,Math.cos(lat*Math.PI/180)));lat=Math.max(-89,Math.min(89,lat+dy*180/(Math.PI*radius)));lastX=e.clientX;lastY=e.clientY;draw()});
+canvas.addEventListener('pointerup',e=>{dragging=false;if(moved)return;const {rect,projection}=geometry();const hit=stories.filter(s=>(filter==='all'||s.type===filter)&&geoDistance([lon,lat],[s.lon,s.lat])<Math.PI/2).map(s=>({s,p:projection([s.lon,s.lat])})).filter(x=>x.p).sort((a,b)=>Math.hypot(a.p[0]-e.clientX+rect.left,a.p[1]-e.clientY+rect.top)-Math.hypot(b.p[0]-e.clientX+rect.left,b.p[1]-e.clientY+rect.top))[0];if(hit&&Math.hypot(hit.p[0]-e.clientX+rect.left,hit.p[1]-e.clientY+rect.top)<16)flyTo(hit.s)});
 canvas.addEventListener('pointercancel',()=>{dragging=false});
-canvas.addEventListener('wheel',e=>{e.preventDefault();scale=Math.max(.7,Math.min(1.35,scale+(e.deltaY<0?.08:-.08)))},{passive:false});
-document.querySelector('#zoom-in').onclick=()=>{if(mapMode)localMap.zoomIn();else scale=Math.min(1.35,scale+.1)};document.querySelector('#zoom-out').onclick=()=>{if(mapMode)localMap.zoomOut();else scale=Math.max(.7,scale-.1)};document.querySelector('#reset').onclick=()=>{if(mapMode)localMap.flyTo([selected.lat,selected.lon],2);else{scale=1;target={lon:115,lat:20}}};
-render();draw();
+function setZoom(n){zoom=Math.max(1,Math.min(10,n));draw()}
+canvas.addEventListener('wheel',e=>{e.preventDefault();setZoom(zoom+(e.deltaY<0?1:-1))},{passive:false});
+document.querySelector('#zoom-in').onclick=()=>setZoom(zoom+1);document.querySelector('#zoom-out').onclick=()=>setZoom(zoom-1);document.querySelector('#reset').onclick=()=>{zoom=1;flyTo(selected)};
+window.addEventListener('resize',draw);render();draw();
 
-// A self-hosted, lightweight geographic layer. Labels are drawn locally so no font server is needed.
-let localMap, places = [], mapMarkers = [], mapMode = false;
-const mapArea = document.querySelector('.globe-area');
-const labelsCanvas = document.querySelector('#place-labels');
-function drawPlaceLabels() {
-  if (!localMap || !mapMode || !localMap._loaded) return;
-  const rect = labelsCanvas.getBoundingClientRect(), ratio = window.devicePixelRatio || 1;
-  labelsCanvas.width = Math.round(rect.width * ratio); labelsCanvas.height = Math.round(rect.height * ratio);
-  const c = labelsCanvas.getContext('2d'); c.setTransform(ratio, 0, 0, ratio, 0, 0);
-  c.font = '11px sans-serif'; c.textBaseline = 'middle';
-  const occupied = [], zoom = localMap.getZoom();
-  for (const place of places) {
-    if (place.minZoom > zoom + 1) continue;
-    const point = localMap.latLngToContainerPoint([place.coordinates[1], place.coordinates[0]]);
-    if (point.x < 0 || point.y < 0 || point.x > rect.width || point.y > rect.height) continue;
-    const width = c.measureText(place.name).width, box = [point.x - 4, point.y - 10, point.x + width + 13, point.y + 10];
-    if (occupied.some(b => box[0] < b[2] && box[2] > b[0] && box[1] < b[3] && box[3] > b[1])) continue;
-    occupied.push(box); c.beginPath(); c.arc(point.x, point.y, 2, 0, Math.PI * 2); c.fillStyle = '#d6d8bd'; c.fill();
-    c.lineWidth = 3; c.strokeStyle = '#263b32'; c.strokeText(place.name, point.x + 6, point.y); c.fillStyle = '#e1e5d3'; c.fillText(place.name, point.x + 6, point.y);
-    if (occupied.length >= 150) break;
-  }
-  document.querySelector('#map-zoom').textContent = `缩放 ${zoom.toFixed(1)} / 10`;
+const layerDialog = document.querySelector('#layer-dialog');
+const layerSelect = document.querySelector('#layer-select');
+const layerForm = document.querySelector('#layer-form');
+const typeInput = document.querySelector('#layer-type');
+const layerListKey = 'unknown-atlas-layers-v1';
+let customLayers = [];
+try { const stored = JSON.parse(localStorage.getItem(layerListKey) || '[]'); if(Array.isArray(stored)) customLayers = stored.filter(l => l && typeof l.id === 'string' && typeof l.name === 'string' && typeof l.url === 'string' && ['xyz','wms'].includes(l.type)); } catch { /* Keep the built-in layer available if storage is unavailable. */ }
+function saveLayers(){try {localStorage.setItem(layerListKey,JSON.stringify(customLayers));return true} catch {return false}}
+function updateLayerOptions(selectedId='') {
+  layerSelect.replaceChildren();
+  const defaultOption=document.createElement('option');defaultOption.value='';defaultOption.textContent='本地地球底图';layerSelect.append(defaultOption);
+  for(const layer of customLayers){const option=document.createElement('option');option.value=layer.id;option.textContent=`${layer.name} · ${layer.type.toUpperCase()}`;layerSelect.append(option)}
+  layerSelect.value=selectedId;document.querySelector('#remove-layer').disabled=!layerSelect.value;
 }
-function refreshMapMarkers() {
-  if (!localMap) return;
-  mapMarkers.forEach(marker => marker.remove()); mapMarkers = [];
-  stories.filter(s => filter === 'all' || s.type === filter).forEach(story => {
-    const icon = L.divIcon({className:'', html:`<button type="button" class="event-marker ${story === selected ? 'selected' : ''}" style="background:${story.color}" aria-label="${story.title}"></button>`, iconSize:[16,16], iconAnchor:[8,8]});
-    const marker = L.marker([story.lat, story.lon], {icon}).addTo(localMap); marker.on('click', () => choose(story)); mapMarkers.push(marker);
-  });
+function activateLayer(){
+  const layer=customLayers.find(item=>item.id===layerSelect.value) || null;
+  document.querySelector('#remove-layer').disabled=!layer;
+  document.querySelector('#layer-attribution').textContent=layer?.credit || '';
+  layerRenderer.setLayer(layer);
+  try { localStorage.setItem(layerListKey + '-active',layer?.id || ''); } catch { /* The current selection still works without storage. */ }
 }
-function initLocalMap() {
-  localMap = L.map('local-map', {center:[selected.lat, selected.lon], zoom:2, minZoom:1, maxZoom:10, zoomControl:false, preferCanvas:true, worldCopyJump:true});
-  localMap.attributionControl.addAttribution('<a href="https://www.naturalearthdata.com/">Natural Earth</a>');
-  localMap.on('move zoom resize', drawPlaceLabels);
-  fetch('data/land.geojson').then(response => { if (!response.ok) throw new Error('Land data unavailable'); return response.json(); }).then(data => {
-    L.geoJSON(data, {style:{color:'#a9ba99', weight:0.5, fillColor:'#889c7e', fillOpacity:1}, interactive:false}).addTo(localMap);
-    refreshMapMarkers(); drawPlaceLabels();
-  }).catch(() => { document.querySelector('#map-zoom').textContent = '地图数据加载失败'; });
-  fetch('data/places.json').then(response => { if (!response.ok) throw new Error('Place data unavailable'); return response.json(); }).then(data => { places = data; drawPlaceLabels(); }).catch(() => { document.querySelector('#map-zoom').textContent = '地名数据加载失败'; });
-}
-document.querySelector('#view-map').addEventListener('click', () => {
-  mapMode = true; mapArea.classList.add('map-mode'); document.querySelector('#view-map').classList.add('active'); document.querySelector('#view-globe').classList.remove('active'); document.querySelector('#hint-text').textContent = '拖动地图移动';
-  if (!localMap) initLocalMap(); else { localMap.invalidateSize(); localMap.setView([selected.lat,selected.lon]); refreshMapMarkers(); drawPlaceLabels(); }
+document.querySelector('#open-layers').addEventListener('click',()=>layerDialog.showModal());
+document.querySelector('#close-layers').addEventListener('click',()=>layerDialog.close());
+layerSelect.addEventListener('change',activateLayer);
+document.querySelector('#remove-layer').addEventListener('click',()=>{customLayers=customLayers.filter(layer=>layer.id!==layerSelect.value);saveLayers();updateLayerOptions();activateLayer()});
+typeInput.addEventListener('change',()=>{
+  const wms=typeInput.value==='wms';document.querySelector('#wms-fields').hidden=!wms;document.querySelector('#wms-layers').required=wms;
+  document.querySelector('#url-hint').textContent=wms?'输入 WMS 服务地址；可保留服务所需的查询参数。':'XYZ 地址需包含 {z}、{x}、{y}。';
+  document.querySelector('#layer-url').placeholder=wms?'http://localhost:8080/geoserver/wms':'https://example.com/{z}/{x}/{y}.png';
 });
-document.querySelector('#view-globe').addEventListener('click', () => { mapMode = false; mapArea.classList.remove('map-mode'); document.querySelector('#view-globe').classList.add('active'); document.querySelector('#view-map').classList.remove('active'); document.querySelector('#hint-text').textContent = '拖动地球旋转'; });
+layerForm.addEventListener('submit',event=>{
+  event.preventDefault();const data=new FormData(layerForm),url=String(data.get('url')).trim(),type=String(data.get('type'));
+  try {const parsed=new URL(url);if(!['http:','https:'].includes(parsed.protocol))throw Error();} catch {document.querySelector('#layer-message').textContent='请输入有效的 HTTP 或 HTTPS 服务地址。';return}
+  if(type==='xyz' && !['{z}','{x}','{y}'].every(part=>url.includes(part))){document.querySelector('#layer-message').textContent='XYZ 地址必须包含 {z}、{x}、{y}。';return}
+  const name=String(data.get('name')).trim(),layers=String(data.get('layers')||'').trim();
+  if(!name || (type==='wms'&&!layers)){document.querySelector('#layer-message').textContent='请填写图层名称和 WMS 图层名称。';return}
+  const layer={id:`${Date.now()}-${Math.random().toString(36).slice(2)}`,name,type,url,layers,version:String(data.get('version')),credit:String(data.get('credit')).trim()};
+  customLayers.push(layer);const saved=saveLayers();updateLayerOptions(layer.id);activateLayer();layerForm.reset();document.querySelector('#wms-fields').hidden=true;document.querySelector('#wms-layers').required=false;document.querySelector('#url-hint').textContent='XYZ 地址需包含 {z}、{x}、{y}。';document.querySelector('#layer-url').placeholder='https://example.com/{z}/{x}/{y}.png';
+  if(!saved)document.querySelector('#layer-message').textContent='图层已添加，但浏览器未允许保存配置。';
+});
+let savedLayerId='';
+try { savedLayerId=localStorage.getItem(layerListKey + '-active') || ''; } catch { /* Use the built-in layer. */ }
+updateLayerOptions(customLayers.some(layer=>layer.id===savedLayerId) ? savedLayerId : '');
+activateLayer();
